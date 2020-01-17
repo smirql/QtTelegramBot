@@ -25,6 +25,7 @@
 #define ENDPOINT_GET_UPDATES                "/getUpdates"
 #define ENDPOINT_SET_WEBHOOK                "/setWebhook"
 #define ENDPOINT_GET_FILE                   "/getFile"
+#define ENDPOINT_DELETE_MESSAGE             "/deleteMessage"
 
 namespace Telegram {
 
@@ -52,6 +53,8 @@ public:
     enum Method { GET, POST, UPLOAD };
 
     QByteArray request(QString endpoint, ParameterList params, Method method);
+
+    void setProxy(QNetworkProxy proxy);
 
 private:
     QNetworkAccessManager *m_nam;

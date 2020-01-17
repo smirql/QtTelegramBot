@@ -7,6 +7,7 @@
 #include <QNetworkAccessManager>
 #include <QNetworkRequest>
 #include <QNetworkReply>
+#include <QNetworkProxy>
 #include <QHttpPart>
 #include <QEventLoop>
 #include <QJsonDocument>
@@ -36,7 +37,15 @@ typedef QList<QList<PhotoSize> > UserProfilePhotos;
 class Bot : public QObject
 {
     Q_OBJECT
+
 public:
+
+    enum Format {
+        Text,
+        HTML,
+        Markdown
+    };
+
     /**
      * Bot constructor
      * @param token
@@ -45,7 +54,12 @@ public:
      * @param pollingTimeout - timeout in sec
      * @param parent
      */
-    explicit Bot(QString token, bool updates = false, quint32 updateInterval = 1000, quint32 pollingTimeout = 0, QObject *parent = 0);
+    explicit Bot(QString token,
+                 bool updates = false,
+                 quint32 updateInterval = 1000,
+                 quint32 pollingTimeout = 0,
+                 QNetworkProxy proxy = QNetworkProxy(),
+                 QObject *parent = 0);
     ~Bot();
 
     enum ChatAction { Typing, UploadingPhoto, RecordingVideo, UploadingVideo, RecordingAudio, UploadingAudio, UploadingDocument, FindingLocation };
@@ -68,7 +82,7 @@ public:
      * @return success
      * @see https://core.telegram.org/bots/api#sendmessage
      */
-    bool sendMessage(QVariant chatId, QString text, bool markdown = false, bool disableWebPagePreview = false, qint32 replyToMessageId = -1, const GenericReply &replyMarkup = GenericReply());
+    int sendMessage(QVariant chatId, QString text, Format format = Text, bool disableWebPagePreview = false, bool disableNotification = false, qint32 replyToMessageId = -1, const GenericReply &replyMarkup = GenericReply());
 
     /**
      * Forward messages of any kind.
@@ -248,6 +262,20 @@ public:
     bool sendChatAction(QVariant chatId, ChatAction action);
 
     /**
+     * Use this method to delete a message, including service messages, with the following limitations:
+     - A message can only be deleted if it was sent less than 48 hours ago.
+     - Bots can delete outgoing messages in private chats, groups, and supergroups.
+     - Bots can delete incoming messages in private chats.
+     - Bots granted can_post_messages permissions can delete outgoing messages in channels.
+     - If the bot is an administrator of a group, it can delete any message there.
+     - If the bot has can_delete_messages permission in a supergroup or a channel, it can delete any message there.
+     * @param message_id - Unique identifier for the target chat or username of the target channel
+     * @param chatid - Identifier of the message to delete
+     * @return success
+     */
+    bool deleteMessage(qint32 message_id, qint32 chatid);
+
+    /**
       *Use this method when you need to answer to the user in response to callback command sent
       * @param callback_query_id - Unique identifier for the query to be answered
       * @param text - Text of the notification. If not specified, nothing will be shown to the user, 0-200 characters
@@ -289,6 +317,8 @@ public:
      */
     bool setWebhook(QString url, QFile *certificate);
 
+    void setProxy(QNetworkProxy proxy);
+
     /**
      * Use this method to get basic info about a file and prepare it for downloading.
      * @param fileId - File identifier to get info about
@@ -301,11 +331,19 @@ private:
     Networking *m_net;
 
     bool _sendPayload(QVariant chatId, QFile *filePayload, ParameterList params, qint32 replyToMessageId, const GenericReply &replyMarkup, QString payloadField, QString endpoint);
-    bool _sendPayload(QVariant chatId, QString textPayload, ParameterList params, qint32 replyToMessageId, const GenericReply &replyMarkup, QString payloadField, QString endpoint);
+    bool _sendPayloadOK(QVariant chatId, QString textPayload, ParameterList params, qint32 replyToMessageId, const GenericReply &replyMarkup, QString payloadField, QString endpoint);
+    int _sendPayloadID(const QVariant &chatId,
+                       const QString &textPayload,
+                       ParameterList &params,
+                       qint32 replyToMessageId,
+                       const GenericReply &replyMarkup,
+                       const QString &payloadField,
+                       const QString &endpoint);
 
     QJsonObject jsonObjectFromByteArray(QByteArray json);
     QJsonArray jsonArrayFromByteArray(QByteArray json);
     bool responseOk(QByteArray json);
+    int responseID(QByteArray json);
 
     void internalGetUpdates();
     QTimer *m_internalUpdateTimer;

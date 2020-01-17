@@ -1,5 +1,7 @@
 #include "message.h"
 
+#include <QJsonDocument>
+
 using namespace Telegram;
 
 Message::Message(QJsonObject message)

@@ -2,7 +2,7 @@
 
 using namespace Telegram;
 
-Bot::Bot(QString token, bool updates, quint32 updateInterval, quint32 pollingTimeout, QObject *parent) :
+Bot::Bot(QString token, bool updates, quint32 updateInterval, quint32 pollingTimeout, QNetworkProxy proxy, QObject *parent) :
     QObject(parent),
     m_net(new Networking(token)),
     m_internalUpdateTimer(new QTimer(this)),
@@ -11,6 +11,8 @@ Bot::Bot(QString token, bool updates, quint32 updateInterval, quint32 pollingTim
     m_pollingTimeout(pollingTimeout)
 
 {
+    if (proxy.hostName().count() > 0)
+        m_net->setProxy(proxy);
     QLoggingCategory::setFilterRules("qt.network.ssl.warning=false");
 
     if (updates) {
@@ -44,18 +46,29 @@ User Bot::getMe()
     return ret;
 }
 
-bool Bot::sendMessage(QVariant chatId, QString text, bool markdown, bool disableWebPagePreview, qint32 replyToMessageId, const GenericReply &replyMarkup)
+int Bot::sendMessage(QVariant chatId, QString text, Format format, bool disableWebPagePreview, bool disableNotification, qint32 replyToMessageId, const GenericReply &replyMarkup)
 {
     ParameterList params;
-    if (markdown) params.insert("parse_mode", HttpParameter("Markdown"));
-    if (disableWebPagePreview) params.insert("disable_web_page_preview", HttpParameter(disableWebPagePreview));
 
-    return this->_sendPayload(chatId, text, ParameterList(), replyToMessageId, replyMarkup, "text", ENDPOINT_SEND_MESSAGE);
+    switch (format) {
+    case HTML:
+        params.insert("parse_mode", HttpParameter("HTML"));
+        break;
+    case Markdown:
+        params.insert("parse_mode", HttpParameter("Markdown"));
+        break;
+    case Text: break;
+    }
+
+    if (disableWebPagePreview) params.insert("disable_web_page_preview", HttpParameter(disableWebPagePreview));
+    if (disableNotification) params.insert("disable_notification", HttpParameter(disableNotification));
+
+    return this->_sendPayloadID(chatId, text, params, replyToMessageId, replyMarkup, "text", ENDPOINT_SEND_MESSAGE);
 }
 
 bool Bot::forwardMessage(QVariant chatId, quint32 fromChatId, quint32 messageId)
 {
-    if (chatId.type() != QVariant::String && chatId.type() != QVariant::Int) {
+    if (chatId.type() != QVariant::String && chatId.type() != QVariant::Int && chatId.type() != QVariant::LongLong) {
         qCritical("Please provide a QString or int as chatId");
         return false;
     }
@@ -82,7 +95,7 @@ bool Bot::sendPhoto(QVariant chatId, QString fileId, QString caption, qint32 rep
     ParameterList params;
     if (!caption.isEmpty()) params.insert("caption", HttpParameter(caption));
 
-    return this->_sendPayload(chatId, fileId, params, replyToMessageId, replyMarkup, "photo", ENDPOINT_SEND_PHOTO);
+    return this->_sendPayloadOK(chatId, fileId, params, replyToMessageId, replyMarkup, "photo", ENDPOINT_SEND_PHOTO);
 }
 
 bool Bot::sendAudio(QVariant chatId, QFile *file, qint64 duration, QString performer, QString title, qint32 replyToMessageId, const GenericReply &replyMarkup)
@@ -102,7 +115,7 @@ bool Bot::sendAudio(QVariant chatId, QString fileId, qint64 duration, QString pe
     if (!performer.isEmpty()) params.insert("performer", HttpParameter(performer));
     if (!title.isEmpty()) params.insert("title", HttpParameter(title));
 
-    return this->_sendPayload(chatId, fileId, params, replyToMessageId, replyMarkup, "audio", ENDPOINT_SEND_AUDIO);
+    return this->_sendPayloadOK(chatId, fileId, params, replyToMessageId, replyMarkup, "audio", ENDPOINT_SEND_AUDIO);
 }
 
 bool Bot::sendDocument(QVariant chatId, QFile *file, qint32 replyToMessageId, const GenericReply &replyMarkup)
@@ -112,7 +125,7 @@ bool Bot::sendDocument(QVariant chatId, QFile *file, qint32 replyToMessageId, co
 
 bool Bot::sendDocument(QVariant chatId, QString fileId, qint32 replyToMessageId, const GenericReply &replyMarkup)
 {
-    return this->_sendPayload(chatId, fileId, ParameterList(), replyToMessageId, replyMarkup, "document", ENDPOINT_SEND_DOCUMENT);
+    return this->_sendPayloadOK(chatId, fileId, ParameterList(), replyToMessageId, replyMarkup, "document", ENDPOINT_SEND_DOCUMENT);
 }
 
 bool Bot::sendSticker(QVariant chatId, QFile *file, qint32 replyToMessageId, const GenericReply &replyMarkup)
@@ -122,7 +135,7 @@ bool Bot::sendSticker(QVariant chatId, QFile *file, qint32 replyToMessageId, con
 
 bool Bot::sendSticker(QVariant chatId, QString fileId, qint32 replyToMessageId, const GenericReply &replyMarkup)
 {
-    return this->_sendPayload(chatId, fileId, ParameterList(), replyToMessageId, replyMarkup, "sticker", ENDPOINT_SEND_STICKER);
+    return this->_sendPayloadOK(chatId, fileId, ParameterList(), replyToMessageId, replyMarkup, "sticker", ENDPOINT_SEND_STICKER);
 }
 
 bool Bot::sendVideo(QVariant chatId, QFile *file, qint64 duration, QString caption, qint32 replyToMessageId, const GenericReply &replyMarkup)
@@ -140,7 +153,7 @@ bool Bot::sendVideo(QVariant chatId, QString fileId, qint64 duration, QString ca
     params.insert("duration", HttpParameter(duration));
     params.insert("caption", HttpParameter(caption));
 
-    return this->_sendPayload(chatId, fileId, params, replyToMessageId, replyMarkup, "video", ENDPOINT_SEND_VIDEO);
+    return this->_sendPayloadOK(chatId, fileId, params, replyToMessageId, replyMarkup, "video", ENDPOINT_SEND_VIDEO);
 }
 
 bool Bot::sendVoice(QVariant chatId, QFile *file, qint64 duration, qint32 replyToMessageId, const GenericReply &replyMarkup)
@@ -156,13 +169,13 @@ bool Bot::sendVoice(QVariant chatId, QString fileId, qint64 duration, qint32 rep
     ParameterList params;
     params.insert("duration", HttpParameter(duration));
 
-    return this->_sendPayload(chatId, fileId, params, replyToMessageId, replyMarkup, "voice", ENDPOINT_SEND_VOICE);
+    return this->_sendPayloadOK(chatId, fileId, params, replyToMessageId, replyMarkup, "voice", ENDPOINT_SEND_VOICE);
 }
 
 bool Bot::sendLocation(QVariant chatId, float latitude, float longitude, qint32 replyToMessageId, const GenericReply &replyMarkup)
 {
     Q_UNUSED(replyMarkup); // TODO
-    if (chatId.type() != QVariant::String && chatId.type() != QVariant::Int) {
+    if (chatId.type() != QVariant::String && chatId.type() != QVariant::Int && chatId.type() != QVariant::LongLong) {
         qCritical("Please provide a QString or int as chatId");
         return false;
     }
@@ -179,7 +192,7 @@ bool Bot::sendLocation(QVariant chatId, float latitude, float longitude, qint32 
 
 bool Bot::sendChatAction(QVariant chatId, Bot::ChatAction action)
 {
-    if (chatId.type() != QVariant::String && chatId.type() != QVariant::Int) {
+    if (chatId.type() != QVariant::String && chatId.type() != QVariant::Int && chatId.type() != QVariant::LongLong) {
         qCritical("Please provide a QString or int as chatId");
         return false;
     }
@@ -216,6 +229,17 @@ bool Bot::sendChatAction(QVariant chatId, Bot::ChatAction action)
     }
 
     bool success = this->responseOk(m_net->request(ENDPOINT_SEND_CHAT_ACTION, params, Networking::POST));
+
+    return success;
+}
+
+bool Bot::deleteMessage(qint32 message_id, qint32 chatid)
+{
+    ParameterList params;
+    params.insert("chat_id", HttpParameter(chatid));
+    params.insert("message_id", HttpParameter(message_id));
+
+    bool success = this->responseOk(m_net->request(ENDPOINT_DELETE_MESSAGE, params, Networking::POST));
 
     return success;
 }
@@ -300,6 +324,11 @@ bool Bot::setWebhook(QString url, QFile *certificate)
     return success;
 }
 
+void Bot::setProxy(QNetworkProxy proxy)
+{
+    m_net->setProxy(proxy);
+}
+
 File Bot::getFile(QString fileId)
 {
     ParameterList params;
@@ -312,7 +341,7 @@ File Bot::getFile(QString fileId)
 
 bool Bot::_sendPayload(QVariant chatId, QFile *filePayload, ParameterList params, qint32 replyToMessageId, const GenericReply &replyMarkup, QString payloadField, QString endpoint)
 {
-    if (chatId.type() != QVariant::String && chatId.type() != QVariant::Int) {
+    if (chatId.type() != QVariant::String && chatId.type() != QVariant::Int && chatId.type() != QVariant::LongLong) {
         qCritical("Please provide a QString or int as chatId");
         return false;
     }
@@ -340,9 +369,9 @@ bool Bot::_sendPayload(QVariant chatId, QFile *filePayload, ParameterList params
     return success;
 }
 
-bool Bot::_sendPayload(QVariant chatId, QString textPayload, ParameterList params, qint32 replyToMessageId, const GenericReply &replyMarkup, QString payloadField, QString endpoint)
+bool Bot::_sendPayloadOK(QVariant chatId, QString textPayload, ParameterList params, qint32 replyToMessageId, const GenericReply &replyMarkup, QString payloadField, QString endpoint)
 {
-    if (chatId.type() != QVariant::String && chatId.type() != QVariant::Int) {
+    if (chatId.type() != QVariant::String && chatId.type() != QVariant::Int && chatId.type() != QVariant::LongLong) {
         qCritical("Please provide a QString or int as chatId");
         return false;
     }
@@ -351,9 +380,28 @@ bool Bot::_sendPayload(QVariant chatId, QString textPayload, ParameterList param
     if (replyToMessageId >= 0) params.insert("reply_to_message_id", HttpParameter(replyToMessageId));
     if (replyMarkup.isValid()) params.insert("reply_markup", HttpParameter(replyMarkup.serialize()));
 
-    bool success = this->responseOk(m_net->request(endpoint, params, Networking::POST));
+    return (this->responseOk(m_net->request(endpoint, params, Networking::POST)));
+}
 
-    return success;
+int Bot::_sendPayloadID(
+        const QVariant &chatId,
+        const QString &textPayload,
+        ParameterList &params,
+        qint32 replyToMessageId,
+        const GenericReply &replyMarkup,
+        const QString &payloadField,
+        const QString &endpoint)
+{
+    if (chatId.type() != QVariant::String && chatId.type() != QVariant::Int && chatId.type() != QVariant::LongLong) {
+        qCritical("Please provide a QString or int as chatId");
+        return false;
+    }
+    params.insert("chat_id", HttpParameter(chatId));
+    params.insert(payloadField, HttpParameter(textPayload));
+    if (replyToMessageId >= 0) params.insert("reply_to_message_id", HttpParameter(replyToMessageId));
+    if (replyMarkup.isValid()) params.insert("reply_markup", HttpParameter(replyMarkup.serialize()));
+
+    return this->responseID(m_net->request(endpoint, params, Networking::POST));
 }
 
 QJsonObject Bot::jsonObjectFromByteArray(QByteArray json)
@@ -388,7 +436,6 @@ QJsonArray Bot::jsonArrayFromByteArray(QByteArray json)
         qWarning("Result is not Ok");
         return QJsonArray();
     }
-
     return obj.value("result").toArray();
 }
 
@@ -400,14 +447,24 @@ bool Bot::responseOk(QByteArray json)
     return (!obj.isEmpty() && obj.value("ok").toBool() == true);
 }
 
+int Bot::responseID(QByteArray json)
+{
+    QJsonDocument d = QJsonDocument::fromJson(json);
+    QJsonObject obj = d.object();
+
+    if (obj.isEmpty()) return -1;
+    if (obj.value("ok").toBool() != true) return -1;
+
+    auto message = Message(obj["result"].toObject());
+    return message.id;
+}
+
 void Bot::internalGetUpdates()
 {
     QList<Update> updates = getUpdates(m_pollingTimeout, 50, m_updateOffset);
-    
     foreach (Update u, updates) {
         // change updateOffset to u.id to avoid duplicate updates
         m_updateOffset = (u.id >= m_updateOffset ? u.id + 1 : m_updateOffset);
-        
         emit message(u.message);
         emit update(u);
     }

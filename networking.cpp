@@ -1,5 +1,7 @@
 #include "networking.h"
 
+#include <QNetworkProxy>
+
 #include <ctime>
 
 using namespace Telegram;
@@ -75,6 +77,11 @@ QByteArray Networking::request(QString endpoint, ParameterList params, Networkin
     QByteArray ret = reply->readAll();
     delete reply;
     return ret;
+}
+
+void Networking::setProxy(QNetworkProxy proxy)
+{
+    m_nam->setProxy(proxy);
 }
 
 QUrl Networking::buildUrl(QString endpoint)
